@@ -558,11 +558,11 @@ elif menu == "Lihat Semua Data":
                 alt.Chart(summary)
                 .mark_bar(cornerRadiusTopLeft=6, cornerRadiusTopRight=6)
                 .encode(
-                    x=alt.X("MAK:N", title="MAK", sort="-y"),
+                    x=alt.X("Tanggal:N", title="Tanggal", sort="-y"),
                     y=alt.Y("Realisasi:Q", title="Realisasi"),
-                    tooltip=["MAK", "Realisasi"]
+                    tooltip=["Tanggal", "Realisasi"]
                 )
-                .properties(height=320, title="Realisasi per MAK")
+                .properties(height=320, title="Realisasi per Tanggal")
                 .configure_title(color="#f1f5f9", fontSize=16)
                 .configure_axis(labelColor="#f1f5f9", titleColor="#f1f5f9", gridColor="#35506f")
                 .configure_view(strokeWidth=0)
