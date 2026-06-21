@@ -128,8 +128,152 @@ h1, h2, h3, h4, h5, h6, label, p, span {
 hr {
     border-color: rgba(255,255,255,.15);
 }
+
+/* LOGIN PAGE */
+.login-wrap {
+    max-width: 460px;
+    margin: 7vh auto 0 auto;
+}
+.login-logo {
+    width: 72px;
+    height: 72px;
+    margin: 0 auto 18px auto;
+    border-radius: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 34px;
+    background: linear-gradient(135deg, #C8A951, #ead58f);
+    box-shadow: 0 16px 35px rgba(0,0,0,.30);
+}
+.login-title {
+    text-align: center;
+    font-size: 30px;
+    font-weight: 800;
+    color: #ffffff !important;
+    margin-bottom: 6px;
+}
+.login-subtitle {
+    text-align: center;
+    color: #b6c2d1 !important;
+    margin-bottom: 28px;
+}
+.login-note {
+    text-align: center;
+    color: #94a3b8 !important;
+    font-size: 12px;
+    margin-top: 18px;
+}
+.user-card {
+    background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.10);
+    border-radius: 16px;
+    padding: 14px;
+    margin: 10px 0 18px 0;
+}
+.user-name {
+    font-weight: 800;
+    color: #ffffff !important;
+    margin-bottom: 2px;
+}
+.user-role {
+    font-size: 12px;
+    color: #cbd5e1 !important;
+}
 </style>
 """, unsafe_allow_html=True)
+
+
+# =========================================================
+# KONFIGURASI LOGIN
+# Ganti username, password, nama, dan role sesuai kebutuhan.
+# =========================================================
+USERS = {
+    "admin": {
+        "password": "admin123",
+        "name": "Administrator",
+        "role": "System Administrator"
+    },
+    "operator": {
+        "password": "operator123",
+        "name": "Operator Anggaran",
+        "role": "Budget Operator"
+    }
+}
+
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+
+if "current_user" not in st.session_state:
+    st.session_state.current_user = None
+
+
+def login_user(username, password):
+    user = USERS.get(username)
+
+    if user and user["password"] == password:
+        st.session_state.authenticated = True
+        st.session_state.current_user = {
+            "username": username,
+            "name": user["name"],
+            "role": user["role"]
+        }
+        return True
+
+    return False
+
+
+def logout_user():
+    st.session_state.authenticated = False
+    st.session_state.current_user = None
+    st.rerun()
+
+
+if not st.session_state.authenticated:
+    st.markdown("""
+    <div class="login-wrap">
+        <div class="login-logo">🏛️</div>
+        <div class="login-title">Sistem Monitoring Anggaran</div>
+        <div class="login-subtitle">Masuk untuk mengakses dashboard monitoring</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    login_left, login_center, login_right = st.columns([1, 1.15, 1])
+
+    with login_center:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+
+        with st.form("login_form", clear_on_submit=False):
+            username = st.text_input(
+                "Username",
+                placeholder="Masukkan username"
+            )
+
+            password = st.text_input(
+                "Password",
+                type="password",
+                placeholder="Masukkan password"
+            )
+
+            login_submit = st.form_submit_button(
+                "Masuk ke Sistem",
+                use_container_width=True
+            )
+
+        if login_submit:
+            if login_user(username.strip(), password):
+                st.success("Login berhasil")
+                st.rerun()
+            else:
+                st.error("Username atau password salah")
+
+        st.markdown(
+            '<div class="login-note">Hubungi administrator kalau akun belum terdaftar.</div>',
+            unsafe_allow_html=True
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    st.stop()
 
 if "data" not in st.session_state:
     st.session_state.data = pd.DataFrame()
@@ -289,6 +433,18 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.sidebar.title("Menu Sistem")
+
+current_user = st.session_state.current_user
+
+st.sidebar.markdown(f"""
+<div class="user-card">
+    <div class="user-name">👤 {current_user["name"]}</div>
+    <div class="user-role">{current_user["role"]}</div>
+</div>
+""", unsafe_allow_html=True)
+
+if st.sidebar.button("Keluar", use_container_width=True):
+    logout_user()
 
 menu = st.sidebar.radio(
     "Pilih Menu",
