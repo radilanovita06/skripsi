@@ -512,13 +512,21 @@ elif menu == "Lihat Semua Data":
     else:
         df = normalize_data(st.session_state.data)
 
-        col1, col2 = st.columns(2)
-        with col1:
+        filter1, filter2, filter3 = st.columns([1.2, 1.2, 1.6])
+        with filter1:
+            selected_months = st.multiselect(
+                "Filter Bulan",
+                BULAN_LIST,
+                default=[m for m in BULAN_LIST if m in df["Tanggal"].unique()]
+            )
+        with filter2:
             search_mak = st.text_input("Cari MAK")
-        with col2:
+        with filter3:
             search_kegiatan = st.text_input("Cari Kegiatan")
 
         filtered = df.copy()
+        if selected_months:
+            filtered = filtered[filtered["Tanggal"].isin(selected_months)]
         if search_mak:
             filtered = filtered[
                 filtered["MAK"].str.contains(search_mak, case=False, na=False)
@@ -531,43 +539,198 @@ elif menu == "Lihat Semua Data":
         total_pagu = filtered["Pagu"].sum()
         total_realisasi = filtered["Realisasi"].sum()
         total_sisa = filtered["Sisa Anggaran"].sum()
+        serapan = (total_realisasi / total_pagu * 100) if total_pagu > 0 else 0
 
-        c1, c2, c3 = st.columns(3)
-        for column, title, value in [
-            (c1, "Total Pagu", total_pagu),
-            (c2, "Total Realisasi", total_realisasi),
-            (c3, "Total Sisa Anggaran", total_sisa),
-        ]:
+        c1, c2, c3, c4 = st.columns(4)
+        metric_items = [
+            (c1, "Total Pagu", format_rupiah(total_pagu)),
+            (c2, "Total Realisasi", format_rupiah(total_realisasi)),
+            (c3, "Sisa Anggaran", format_rupiah(total_sisa)),
+            (c4, "Serapan Anggaran", f"{serapan:.2f}%".replace(".", ",")),
+        ]
+        for column, title, value in metric_items:
             with column:
                 st.markdown(f"""
                 <div class="metric-card">
                     <div class="metric-title">{title}</div>
-                    <div class="metric-value">{format_rupiah(value)}</div>
+                    <div class="metric-value">{value}</div>
                 </div>
                 """, unsafe_allow_html=True)
 
         st.divider()
 
-        summary = (
-            filtered.groupby("MAK", as_index=False)[["Pagu", "Realisasi", "Sisa Anggaran"]]
+        month_summary = (
+            filtered.groupby("Tanggal", as_index=False)[["Pagu", "Realisasi", "Sisa Anggaran"]]
             .sum()
         )
+        month_summary["Urutan Bulan"] = month_summary["Tanggal"].apply(
+            lambda x: BULAN_LIST.index(x) if x in BULAN_LIST else 99
+        )
+        month_summary = month_summary.sort_values("Urutan Bulan")
+        month_summary["Serapan"] = month_summary.apply(
+            lambda row: (row["Realisasi"] / row["Pagu"] * 100) if row["Pagu"] > 0 else 0,
+            axis=1
+        )
 
-        if not summary.empty:
-            chart = (
-                alt.Chart(summary)
-                .mark_bar(cornerRadiusTopLeft=6, cornerRadiusTopRight=6)
-                .encode(
-                    x=alt.X("Tanggal:N", title="Tanggal", sort="-y"),
-                    y=alt.Y("Realisasi:Q", title="Realisasi"),
-                    tooltip=["Tanggal", "Realisasi"]
+        if month_summary.empty:
+            st.warning("Data tidak ditemukan dari filter yang dipilih")
+        else:
+            st.subheader("Visualisasi Anggaran")
+
+            g1, g2 = st.columns(2)
+
+            with g1:
+                st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+                area = (
+                    alt.Chart(month_summary)
+                    .mark_area(
+                        line={"color": "#E8C96A", "strokeWidth": 3},
+                        color=alt.Gradient(
+                            gradient="linear",
+                            stops=[
+                                alt.GradientStop(color="#E8C96A", offset=0),
+                                alt.GradientStop(color="#214D7D", offset=1),
+                            ],
+                            x1=1,
+                            x2=1,
+                            y1=1,
+                            y2=0,
+                        ),
+                        opacity=0.75
+                    )
+                    .encode(
+                        x=alt.X("Tanggal:N", sort=BULAN_LIST, title=None),
+                        y=alt.Y("Realisasi:Q", title="Realisasi", axis=alt.Axis(format="~s")),
+                        tooltip=[
+                            alt.Tooltip("Tanggal:N", title="Bulan"),
+                            alt.Tooltip("Realisasi:Q", title="Realisasi", format=",.0f")
+                        ]
+                    )
+                    .properties(height=330, title="Tren Realisasi per Bulan")
                 )
-                .properties(height=320, title="Realisasi per Tanggal")
-                .configure_title(color="#f1f5f9", fontSize=16)
-                .configure_axis(labelColor="#f1f5f9", titleColor="#f1f5f9", gridColor="#35506f")
-                .configure_view(strokeWidth=0)
-            )
-            st.altair_chart(chart, use_container_width=True)
+                st.altair_chart(
+                    area.configure_title(color="#f1f5f9", fontSize=17, anchor="start")
+                        .configure_axis(labelColor="#dbeafe", titleColor="#dbeafe", gridColor="#35506f")
+                        .configure_view(strokeWidth=0),
+                    use_container_width=True
+                )
+                st.markdown("</div>", unsafe_allow_html=True)
+
+            with g2:
+                st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+                long_month = month_summary.melt(
+                    id_vars=["Tanggal"],
+                    value_vars=["Pagu", "Realisasi"],
+                    var_name="Jenis",
+                    value_name="Nilai"
+                )
+                grouped_bar = (
+                    alt.Chart(long_month)
+                    .mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5)
+                    .encode(
+                        x=alt.X("Tanggal:N", sort=BULAN_LIST, title=None),
+                        xOffset="Jenis:N",
+                        y=alt.Y("Nilai:Q", title="Nilai Anggaran", axis=alt.Axis(format="~s")),
+                        color=alt.Color(
+                            "Jenis:N",
+                            scale=alt.Scale(domain=["Pagu", "Realisasi"], range=["#4F86C6", "#E8C96A"]),
+                            legend=alt.Legend(title=None, orient="top")
+                        ),
+                        tooltip=[
+                            alt.Tooltip("Tanggal:N", title="Bulan"),
+                            alt.Tooltip("Jenis:N", title="Kategori"),
+                            alt.Tooltip("Nilai:Q", title="Nilai", format=",.0f")
+                        ]
+                    )
+                    .properties(height=330, title="Pagu vs Realisasi per Bulan")
+                )
+                st.altair_chart(
+                    grouped_bar.configure_title(color="#f1f5f9", fontSize=17, anchor="start")
+                        .configure_axis(labelColor="#dbeafe", titleColor="#dbeafe", gridColor="#35506f")
+                        .configure_legend(labelColor="#f1f5f9")
+                        .configure_view(strokeWidth=0),
+                    use_container_width=True
+                )
+                st.markdown("</div>", unsafe_allow_html=True)
+
+            g3, g4 = st.columns([1.35, 1])
+
+            with g3:
+                st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+                serapan_chart = (
+                    alt.Chart(month_summary)
+                    .mark_bar(cornerRadiusEnd=7)
+                    .encode(
+                        y=alt.Y("Tanggal:N", sort=BULAN_LIST, title=None),
+                        x=alt.X("Serapan:Q", title="Persentase Serapan", scale=alt.Scale(domain=[0, max(100, float(month_summary["Serapan"].max()) + 5)])),
+                        color=alt.Color(
+                            "Serapan:Q",
+                            scale=alt.Scale(domain=[0, 100], range=["#315B83", "#E8C96A"]),
+                            legend=None
+                        ),
+                        tooltip=[
+                            alt.Tooltip("Tanggal:N", title="Bulan"),
+                            alt.Tooltip("Serapan:Q", title="Serapan", format=".2f")
+                        ]
+                    )
+                    .properties(height=330, title="Persentase Serapan per Bulan")
+                )
+                target_line = alt.Chart(pd.DataFrame({"target": [100]})).mark_rule(
+                    color="#F87171", strokeDash=[6, 5], strokeWidth=2
+                ).encode(x="target:Q")
+                st.altair_chart(
+                    (serapan_chart + target_line)
+                    .configure_title(color="#f1f5f9", fontSize=17, anchor="start")
+                    .configure_axis(labelColor="#dbeafe", titleColor="#dbeafe", gridColor="#35506f")
+                    .configure_view(strokeWidth=0),
+                    use_container_width=True
+                )
+                st.markdown("</div>", unsafe_allow_html=True)
+
+            with g4:
+                st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+                composition = pd.DataFrame({
+                    "Kategori": ["Realisasi", "Sisa Anggaran"],
+                    "Nilai": [total_realisasi, max(total_sisa, 0)]
+                })
+                donut = (
+                    alt.Chart(composition)
+                    .mark_arc(innerRadius=72, outerRadius=115, cornerRadius=8)
+                    .encode(
+                        theta=alt.Theta("Nilai:Q"),
+                        color=alt.Color(
+                            "Kategori:N",
+                            scale=alt.Scale(domain=["Realisasi", "Sisa Anggaran"], range=["#E8C96A", "#315B83"]),
+                            legend=alt.Legend(title=None, orient="bottom")
+                        ),
+                        tooltip=[
+                            alt.Tooltip("Kategori:N"),
+                            alt.Tooltip("Nilai:Q", format=",.0f")
+                        ]
+                    )
+                    .properties(height=330, title="Komposisi Anggaran")
+                )
+                center_text = (
+                    alt.Chart(pd.DataFrame({"label": [f"{serapan:.1f}%"]}))
+                    .mark_text(fontSize=28, fontWeight="bold", color="#F8FAFC")
+                    .encode(text="label:N")
+                )
+                st.altair_chart(
+                    (donut + center_text)
+                    .configure_title(color="#f1f5f9", fontSize=17, anchor="start")
+                    .configure_legend(labelColor="#f1f5f9")
+                    .configure_view(strokeWidth=0),
+                    use_container_width=True
+                )
+                st.markdown("</div>", unsafe_allow_html=True)
+
+            st.subheader("Ringkasan Bulanan")
+            monthly_display = month_summary[["Tanggal", "Pagu", "Realisasi", "Sisa Anggaran", "Serapan"]].copy()
+            monthly_display["Pagu"] = monthly_display["Pagu"].apply(format_rupiah)
+            monthly_display["Realisasi"] = monthly_display["Realisasi"].apply(format_rupiah)
+            monthly_display["Sisa Anggaran"] = monthly_display["Sisa Anggaran"].apply(format_rupiah)
+            monthly_display["Serapan"] = monthly_display["Serapan"].apply(lambda x: f"{x:.2f}%".replace(".", ","))
+            st.dataframe(monthly_display, use_container_width=True, hide_index=True)
 
         st.subheader("Detail Data")
         display_df = display_data(filtered)
