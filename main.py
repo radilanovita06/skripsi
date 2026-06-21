@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import altair as alt
-from datetime import date
+from io import BytesIO
 
 st.set_page_config(
     page_title="Sistem Monitoring Anggaran",
@@ -121,6 +121,11 @@ USERS = {
     }
 }
 
+BULAN_LIST = [
+    "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+    "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+]
+
 TEMPLATE_COLUMNS = [
     "Tanggal",
     "No",
@@ -198,15 +203,89 @@ def format_rupiah(value):
         return "Rp0"
 
 
-def normalize_data(df: pd.DataFrame) -> pd.DataFrame:
+def normalize_headers(df: pd.DataFrame) -> pd.DataFrame:
+    """Rapikan nama kolom agar tahan terhadap spasi, kapital, dan typo umum."""
     df = df.copy()
+
+    aliases = {
+        "tanggal": "Tanggal",
+        "date": "Tanggal",
+        "no": "No",
+        "nomor": "No",
+        "mak": "MAK",
+        "kegiatan": "Kegiatan",
+        "pagu": "Pagu",
+        "realisasi": "Realisasi",
+        "realosaso": "Realisasi",
+        "sisa anggaran": "Sisa Anggaran",
+        "sisa amggaran": "Sisa Anggaran",
+    }
+
+    renamed = {}
+    for col in df.columns:
+        cleaned = " ".join(str(col).replace("\ufeff", "").strip().split()).lower()
+        renamed[col] = aliases.get(cleaned, str(col).strip())
+
+    return df.rename(columns=renamed)
+
+
+def read_uploaded_file(uploaded_file) -> pd.DataFrame:
+    filename = uploaded_file.name.lower()
+
+    if filename.endswith(".csv"):
+        # sep=None + python engine mendeteksi koma, titik koma, atau tab otomatis.
+        return pd.read_csv(uploaded_file, sep=None, engine="python", encoding="utf-8-sig")
+
+    try:
+        return pd.read_excel(uploaded_file, engine="calamine")
+    except (ImportError, ModuleNotFoundError) as exc:
+        raise RuntimeError(
+            "Mesin pembaca Excel belum terpasang. Pastikan requirements.txt berisi "
+            "python-calamine dan pandas>=2.2.0."
+        ) from exc
+
+
+def normalize_bulan(value):
+    """Baca nama bulan tanpa tanggal/tahun, termasuk singkatan dan angka 1-12."""
+    if pd.isna(value) or str(value).strip() == "":
+        return ""
+
+    text = str(value).strip().lower()
+    aliases = {
+        "1": "Januari", "01": "Januari", "jan": "Januari", "januari": "Januari",
+        "2": "Februari", "02": "Februari", "feb": "Februari", "februari": "Februari",
+        "3": "Maret", "03": "Maret", "mar": "Maret", "maret": "Maret",
+        "4": "April", "04": "April", "apr": "April", "april": "April",
+        "5": "Mei", "05": "Mei", "may": "Mei", "mei": "Mei",
+        "6": "Juni", "06": "Juni", "jun": "Juni", "juni": "Juni",
+        "7": "Juli", "07": "Juli", "jul": "Juli", "juli": "Juli",
+        "8": "Agustus", "08": "Agustus", "agu": "Agustus", "aug": "Agustus", "agustus": "Agustus",
+        "9": "September", "09": "September", "sep": "September", "september": "September",
+        "10": "Oktober", "okt": "Oktober", "oct": "Oktober", "oktober": "Oktober",
+        "11": "November", "nov": "November", "november": "November",
+        "12": "Desember", "des": "Desember", "dec": "Desember", "desember": "Desember",
+    }
+
+    if text in aliases:
+        return aliases[text]
+
+    # Tetap bisa membaca jika Excel menyimpan tanggal lengkap.
+    parsed = pd.to_datetime(value, errors="coerce", dayfirst=True)
+    if not pd.isna(parsed):
+        return BULAN_LIST[parsed.month - 1]
+
+    return str(value).strip().title()
+
+
+def normalize_data(df: pd.DataFrame) -> pd.DataFrame:
+    df = normalize_headers(df)
 
     for col in TEMPLATE_COLUMNS:
         if col not in df.columns:
             df[col] = "" if col in ["Tanggal", "MAK", "Kegiatan"] else 0
 
     df = df[TEMPLATE_COLUMNS]
-    df["Tanggal"] = pd.to_datetime(df["Tanggal"], errors="coerce").dt.date
+    df["Tanggal"] = df["Tanggal"].apply(normalize_bulan)
     df["MAK"] = df["MAK"].fillna("").astype(str).str.strip()
     df["Kegiatan"] = df["Kegiatan"].fillna("").astype(str).str.strip()
     df["Pagu"] = df["Pagu"].apply(clean_money)
@@ -219,9 +298,6 @@ def normalize_data(df: pd.DataFrame) -> pd.DataFrame:
 
 def display_data(df: pd.DataFrame) -> pd.DataFrame:
     result = normalize_data(df)
-    result["Tanggal"] = result["Tanggal"].apply(
-        lambda x: x.strftime("%d-%m-%Y") if pd.notna(x) else ""
-    )
     for col in ["Pagu", "Realisasi", "Sisa Anggaran"]:
         result[col] = result[col].apply(format_rupiah)
     return result
@@ -229,6 +305,18 @@ def display_data(df: pd.DataFrame) -> pd.DataFrame:
 
 def to_csv(df: pd.DataFrame):
     return df.to_csv(index=False).encode("utf-8-sig")
+
+
+def to_xlsx(df: pd.DataFrame):
+    try:
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+            df.to_excel(writer, index=False, sheet_name="Data Anggaran")
+        return output.getvalue()
+    except ModuleNotFoundError as exc:
+        st.error("XlsxWriter belum terpasang. Template CSV tetap bisa dipakai.")
+        st.code("pip install XlsxWriter")
+        return None
 
 
 def show_login():
@@ -263,6 +351,7 @@ if not st.session_state.authenticated:
 current_user = st.session_state.current_user
 
 st.sidebar.title("Menu Sistem")
+st.sidebar.caption("Versi aplikasi: 2026.06.21-v2-no-openpyxl")
 st.sidebar.markdown(f"""
 <div class="user-card">
     <div class="user-name">{current_user['name']}</div>
@@ -300,7 +389,7 @@ if menu == "Input Data":
     with st.form("input_form", clear_on_submit=True):
         col1, col2 = st.columns(2)
         with col1:
-            tanggal = st.date_input("Tanggal", value=date.today())
+            tanggal = st.selectbox("Tanggal (Bulan)", BULAN_LIST)
             mak = st.text_input("MAK", placeholder="Contoh: 521211")
             kegiatan = st.text_area("Kegiatan")
         with col2:
@@ -339,27 +428,45 @@ elif menu == "Upload Template":
     st.subheader("Upload Data Menggunakan Template")
 
     template = pd.DataFrame(columns=TEMPLATE_COLUMNS)
-    st.download_button(
-        "Download Template CSV",
-        data=to_csv(template),
-        file_name="Template_Monitoring_Anggaran.csv",
-        mime="text/csv"
-    )
+    template["Tanggal"] = pd.Series(dtype="object")
 
-    uploaded_file = st.file_uploader("Upload CSV atau Excel", type=["csv", "xlsx", "xls"])
+    c1, c2 = st.columns(2)
+    with c1:
+        st.download_button(
+            "Download Template CSV",
+            data=to_csv(template),
+            file_name="Template_Monitoring_Anggaran.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+    with c2:
+        xlsx_template = to_xlsx(template)
+        if xlsx_template is not None:
+            st.download_button(
+                "Download Template XLSX",
+                data=xlsx_template,
+                file_name="Template_Monitoring_Anggaran.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+
+    uploaded_file = st.file_uploader("Upload CSV atau XLSX", type=["csv", "xlsx", "xls", "xlsm", "xlsb"])
 
     if uploaded_file is not None:
         try:
-            if uploaded_file.name.lower().endswith(".csv"):
-                upload_df = pd.read_csv(uploaded_file)
-            else:
-                upload_df = pd.read_excel(uploaded_file)
+            upload_df = read_uploaded_file(uploaded_file)
+            upload_df = normalize_headers(upload_df)
 
             required = ["Tanggal", "MAK", "Kegiatan", "Pagu", "Realisasi"]
             missing = [col for col in required if col not in upload_df.columns]
 
             if missing:
+                detected = ", ".join(map(str, upload_df.columns.tolist())) or "tidak ada kolom"
                 st.error(f"Kolom wajib belum ada: {', '.join(missing)}")
+                st.caption(f"Kolom yang terbaca: {detected}")
+                st.info(
+                    "Gunakan header: Tanggal, No, MAK, Kegiatan, Pagu, Realisasi, Sisa Anggaran. Kolom Tanggal boleh berisi Januari, Februari, dan seterusnya tanpa tahun."
+                )
             else:
                 upload_df = normalize_data(upload_df)
                 st.subheader("Preview")
@@ -480,7 +587,6 @@ elif menu == "Kelola Data":
         st.caption("Admin bisa mengubah data langsung di tabel, lalu klik Simpan Perubahan.")
 
         editable_df = df.copy()
-        editable_df["Tanggal"] = pd.to_datetime(editable_df["Tanggal"], errors="coerce")
 
         edited_df = st.data_editor(
             editable_df,
@@ -489,7 +595,9 @@ elif menu == "Kelola Data":
             num_rows="fixed",
             disabled=["No", "Sisa Anggaran"],
             column_config={
-                "Tanggal": st.column_config.DateColumn("Tanggal", format="DD-MM-YYYY"),
+                "Tanggal": st.column_config.SelectboxColumn(
+                    "Tanggal", options=BULAN_LIST, required=True
+                ),
                 "No": st.column_config.NumberColumn("No"),
                 "MAK": st.column_config.TextColumn("MAK", required=True),
                 "Kegiatan": st.column_config.TextColumn("Kegiatan", required=True),
