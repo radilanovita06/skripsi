@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 from io import BytesIO
+import time
 
 st.set_page_config(
     page_title="Sistem Monitoring Anggaran",
@@ -473,11 +474,26 @@ elif menu == "Upload Template":
                 st.dataframe(display_data(upload_df), use_container_width=True, hide_index=True)
 
                 if st.button("Simpan Data Upload", use_container_width=True):
+                    progress = st.progress(0, text="Menyiapkan data...")
+
+                    for value, message in [
+                        (25, "Memeriksa format file..."),
+                        (55, "Menghitung sisa anggaran..."),
+                        (80, "Menyimpan data..."),
+                        (100, "Upload selesai")
+                    ]:
+                        time.sleep(0.20)
+                        progress.progress(value, text=message)
+
                     st.session_state.data = normalize_data(
                         pd.concat([st.session_state.data, upload_df], ignore_index=True)
                     )
-                    st.success("Data upload berhasil disimpan")
-                    st.rerun()
+
+                    st.toast("Upload sukses, data udah masuk 😹", icon="✅")
+                    st.success(
+                        f"Upload berhasil. {len(upload_df)} baris data udah disimpan."
+                    )
+                    st.balloons()
 
         except Exception as exc:
             st.error(f"File gagal dibaca: {exc}")
