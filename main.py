@@ -748,6 +748,158 @@ elif menu == "Lihat Semua Data":
                 )
                 st.markdown("</div>", unsafe_allow_html=True)
 
+            st.subheader("Visualisasi per Unit")
+
+            unit_summary = (
+                filtered.groupby("Unit", as_index=False)[["Pagu", "Realisasi", "Sisa Anggaran"]]
+                .sum()
+            )
+            unit_summary["Serapan"] = unit_summary.apply(
+                lambda row: (row["Realisasi"] / row["Pagu"] * 100) if row["Pagu"] > 0 else 0,
+                axis=1
+            )
+
+            if unit_summary.empty:
+                st.info("Belum ada data unit untuk divisualisasikan")
+            else:
+                u1, u2 = st.columns(2)
+
+                with u1:
+                    st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+                    unit_realization = (
+                        alt.Chart(unit_summary)
+                        .mark_bar(cornerRadiusEnd=8)
+                        .encode(
+                            y=alt.Y("Unit:N", sort="-x", title=None),
+                            x=alt.X("Realisasi:Q", title="Realisasi", axis=alt.Axis(format="~s")),
+                            color=alt.Color(
+                                "Realisasi:Q",
+                                scale=alt.Scale(range=["#315B83", "#E8C96A"]),
+                                legend=None
+                            ),
+                            tooltip=[
+                                alt.Tooltip("Unit:N", title="Unit"),
+                                alt.Tooltip("Realisasi:Q", title="Realisasi", format=",.0f")
+                            ]
+                        )
+                        .properties(height=340, title="Realisasi Anggaran per Unit")
+                    )
+                    st.altair_chart(
+                        unit_realization.configure_title(color="#f1f5f9", fontSize=17, anchor="start")
+                        .configure_axis(labelColor="#dbeafe", titleColor="#dbeafe", gridColor="#35506f")
+                        .configure_view(strokeWidth=0),
+                        use_container_width=True
+                    )
+                    st.markdown("</div>", unsafe_allow_html=True)
+
+                with u2:
+                    st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+                    unit_long = unit_summary.melt(
+                        id_vars=["Unit"],
+                        value_vars=["Pagu", "Realisasi"],
+                        var_name="Jenis",
+                        value_name="Nilai"
+                    )
+                    unit_compare = (
+                        alt.Chart(unit_long)
+                        .mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5)
+                        .encode(
+                            x=alt.X("Unit:N", title=None),
+                            xOffset="Jenis:N",
+                            y=alt.Y("Nilai:Q", title="Nilai Anggaran", axis=alt.Axis(format="~s")),
+                            color=alt.Color(
+                                "Jenis:N",
+                                scale=alt.Scale(domain=["Pagu", "Realisasi"], range=["#4F86C6", "#E8C96A"]),
+                                legend=alt.Legend(title=None, orient="top")
+                            ),
+                            tooltip=[
+                                alt.Tooltip("Unit:N", title="Unit"),
+                                alt.Tooltip("Jenis:N", title="Kategori"),
+                                alt.Tooltip("Nilai:Q", title="Nilai", format=",.0f")
+                            ]
+                        )
+                        .properties(height=340, title="Pagu vs Realisasi per Unit")
+                    )
+                    st.altair_chart(
+                        unit_compare.configure_title(color="#f1f5f9", fontSize=17, anchor="start")
+                        .configure_axis(labelColor="#dbeafe", titleColor="#dbeafe", gridColor="#35506f")
+                        .configure_legend(labelColor="#f1f5f9")
+                        .configure_view(strokeWidth=0),
+                        use_container_width=True
+                    )
+                    st.markdown("</div>", unsafe_allow_html=True)
+
+                u3, u4 = st.columns([1.3, 1])
+
+                with u3:
+                    st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+                    unit_absorption = (
+                        alt.Chart(unit_summary)
+                        .mark_bar(cornerRadiusEnd=8)
+                        .encode(
+                            y=alt.Y("Unit:N", sort="-x", title=None),
+                            x=alt.X(
+                                "Serapan:Q",
+                                title="Persentase Serapan",
+                                scale=alt.Scale(domain=[0, max(100, float(unit_summary["Serapan"].max()) + 5)])
+                            ),
+                            color=alt.Color(
+                                "Serapan:Q",
+                                scale=alt.Scale(domain=[0, 100], range=["#315B83", "#E8C96A"]),
+                                legend=None
+                            ),
+                            tooltip=[
+                                alt.Tooltip("Unit:N", title="Unit"),
+                                alt.Tooltip("Serapan:Q", title="Serapan", format=".2f")
+                            ]
+                        )
+                        .properties(height=340, title="Persentase Serapan per Unit")
+                    )
+                    target_unit = alt.Chart(pd.DataFrame({"target": [100]})).mark_rule(
+                        color="#F87171", strokeDash=[6, 5], strokeWidth=2
+                    ).encode(x="target:Q")
+                    st.altair_chart(
+                        (unit_absorption + target_unit)
+                        .configure_title(color="#f1f5f9", fontSize=17, anchor="start")
+                        .configure_axis(labelColor="#dbeafe", titleColor="#dbeafe", gridColor="#35506f")
+                        .configure_view(strokeWidth=0),
+                        use_container_width=True
+                    )
+                    st.markdown("</div>", unsafe_allow_html=True)
+
+                with u4:
+                    st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+                    unit_share = unit_summary[["Unit", "Realisasi"]].copy()
+                    unit_share = unit_share[unit_share["Realisasi"] > 0]
+                    unit_donut = (
+                        alt.Chart(unit_share)
+                        .mark_arc(innerRadius=68, outerRadius=112, cornerRadius=7)
+                        .encode(
+                            theta=alt.Theta("Realisasi:Q"),
+                            color=alt.Color("Unit:N", legend=alt.Legend(title=None, orient="bottom")),
+                            tooltip=[
+                                alt.Tooltip("Unit:N", title="Unit"),
+                                alt.Tooltip("Realisasi:Q", title="Realisasi", format=",.0f")
+                            ]
+                        )
+                        .properties(height=340, title="Kontribusi Realisasi per Unit")
+                    )
+                    st.altair_chart(
+                        unit_donut.configure_title(color="#f1f5f9", fontSize=17, anchor="start")
+                        .configure_legend(labelColor="#f1f5f9", columns=2)
+                        .configure_view(strokeWidth=0),
+                        use_container_width=True
+                    )
+                    st.markdown("</div>", unsafe_allow_html=True)
+
+                st.subheader("Ringkasan per Unit")
+                unit_display = unit_summary[["Unit", "Pagu", "Realisasi", "Sisa Anggaran", "Serapan"]].copy()
+                unit_display["Pagu"] = unit_display["Pagu"].apply(format_rupiah)
+                unit_display["Realisasi"] = unit_display["Realisasi"].apply(format_rupiah)
+                unit_display["Sisa Anggaran"] = unit_display["Sisa Anggaran"].apply(format_rupiah)
+                unit_display["Serapan"] = unit_display["Serapan"].apply(lambda x: f"{x:.2f}%".replace(".", ","))
+                st.dataframe(unit_display, use_container_width=True, hide_index=True)
+
             st.subheader("Ringkasan Bulanan")
             monthly_display = month_summary[["Tanggal", "Pagu", "Realisasi", "Sisa Anggaran", "Serapan"]].copy()
             monthly_display["Pagu"] = monthly_display["Pagu"].apply(format_rupiah)
