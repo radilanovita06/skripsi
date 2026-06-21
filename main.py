@@ -122,12 +122,15 @@ USERS = {
     }
 }
 
+UNIT_LIST = ["Sekretariat", "IHHP", "IMHLP", "MINTEMGAR", "IKOP", "DIREKTIF"]
+
 BULAN_LIST = [
     "Januari", "Februari", "Maret", "April", "Mei", "Juni",
     "Juli", "Agustus", "September", "Oktober", "November", "Desember"
 ]
 
 TEMPLATE_COLUMNS = [
+    "Unit",
     "Tanggal",
     "No",
     "MAK",
@@ -209,6 +212,9 @@ def normalize_headers(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
     aliases = {
+        "unit": "Unit",
+        "direktorat": "Unit",
+        "penanggung jawab": "Unit",
         "tanggal": "Tanggal",
         "date": "Tanggal",
         "no": "No",
@@ -283,9 +289,10 @@ def normalize_data(df: pd.DataFrame) -> pd.DataFrame:
 
     for col in TEMPLATE_COLUMNS:
         if col not in df.columns:
-            df[col] = "" if col in ["Tanggal", "MAK", "Kegiatan"] else 0
+            df[col] = "" if col in ["Unit", "Tanggal", "MAK", "Kegiatan"] else 0
 
     df = df[TEMPLATE_COLUMNS]
+    df["Unit"] = df["Unit"].fillna("").astype(str).str.strip()
     df["Tanggal"] = df["Tanggal"].apply(normalize_bulan)
     df["MAK"] = df["MAK"].fillna("").astype(str).str.strip()
     df["Kegiatan"] = df["Kegiatan"].fillna("").astype(str).str.strip()
@@ -352,7 +359,7 @@ if not st.session_state.authenticated:
 current_user = st.session_state.current_user
 
 st.sidebar.title("Menu Sistem")
-st.sidebar.caption("Versi aplikasi: 2026.06.21-v2-no-openpyxl")
+st.sidebar.caption("Versi aplikasi: 2026.06.21-v5-unit-upload")
 st.sidebar.markdown(f"""
 <div class="user-card">
     <div class="user-name">{current_user['name']}</div>
@@ -390,6 +397,7 @@ if menu == "Input Data":
     with st.form("input_form", clear_on_submit=True):
         col1, col2 = st.columns(2)
         with col1:
+            unit = st.selectbox("Unit", UNIT_LIST)
             tanggal = st.selectbox("Tanggal (Bulan)", BULAN_LIST)
             mak = st.text_input("MAK", placeholder="Contoh: 521211")
             kegiatan = st.text_area("Kegiatan")
@@ -406,6 +414,7 @@ if menu == "Input Data":
             st.error("MAK dan Kegiatan wajib diisi")
         else:
             new_row = pd.DataFrame([{
+                "Unit": unit,
                 "Tanggal": tanggal,
                 "No": 0,
                 "MAK": mak.strip(),
@@ -451,6 +460,12 @@ elif menu == "Upload Template":
                 use_container_width=True
             )
 
+    selected_unit = st.selectbox(
+        "Pilih Unit Data",
+        UNIT_LIST,
+        help="Semua baris dari file yang di-upload akan otomatis masuk ke unit ini."
+    )
+
     uploaded_file = st.file_uploader("Upload CSV atau XLSX", type=["csv", "xlsx", "xls", "xlsm", "xlsb"])
 
     if uploaded_file is not None:
@@ -466,9 +481,10 @@ elif menu == "Upload Template":
                 st.error(f"Kolom wajib belum ada: {', '.join(missing)}")
                 st.caption(f"Kolom yang terbaca: {detected}")
                 st.info(
-                    "Gunakan header: Tanggal, No, MAK, Kegiatan, Pagu, Realisasi, Sisa Anggaran. Kolom Tanggal boleh berisi Januari, Februari, dan seterusnya tanpa tahun."
+                    "Gunakan header: Tanggal, No, MAK, Kegiatan, Pagu, Realisasi, Sisa Anggaran. Kolom Unit tidak wajib karena otomatis mengikuti pilihan di atas."
                 )
             else:
+                upload_df["Unit"] = selected_unit
                 upload_df = normalize_data(upload_df)
                 st.subheader("Preview")
                 st.dataframe(display_data(upload_df), use_container_width=True, hide_index=True)
@@ -512,7 +528,13 @@ elif menu == "Lihat Semua Data":
     else:
         df = normalize_data(st.session_state.data)
 
-        filter1, filter2, filter3 = st.columns([1.2, 1.2, 1.6])
+        filter0, filter1, filter2, filter3 = st.columns([1.1, 1.2, 1.2, 1.6])
+        with filter0:
+            selected_units = st.multiselect(
+                "Filter Unit",
+                UNIT_LIST,
+                default=[u for u in UNIT_LIST if u in df["Unit"].unique()]
+            )
         with filter1:
             selected_months = st.multiselect(
                 "Filter Bulan",
@@ -525,6 +547,8 @@ elif menu == "Lihat Semua Data":
             search_kegiatan = st.text_input("Cari Kegiatan")
 
         filtered = df.copy()
+        if selected_units:
+            filtered = filtered[filtered["Unit"].isin(selected_units)]
         if selected_months:
             filtered = filtered[filtered["Tanggal"].isin(selected_months)]
         if search_mak:
