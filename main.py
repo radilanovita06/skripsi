@@ -207,6 +207,15 @@ def format_rupiah(value):
         return "Rp0"
 
 
+def rupiah_axis(title: str):
+    """Axis grafik dalam format Rupiah penuh, tanpa singkatan G/K/M."""
+    return alt.Axis(
+        title=title,
+        labelExpr="'Rp ' + replace(format(datum.value, ',.0f'), ',', '.')",
+        labelLimit=180
+    )
+
+
 def normalize_headers(df: pd.DataFrame) -> pd.DataFrame:
     """Rapikan nama kolom agar tahan terhadap spasi, kapital, dan typo umum."""
     df = df.copy()
@@ -624,10 +633,10 @@ elif menu == "Lihat Semua Data":
                     )
                     .encode(
                         x=alt.X("Tanggal:N", sort=BULAN_LIST, title=None),
-                        y=alt.Y("Realisasi:Q", title="Realisasi", axis=alt.Axis(format="~s")),
+                        y=alt.Y("Realisasi:Q", title="Realisasi", axis=rupiah_axis("Realisasi")),
                         tooltip=[
                             alt.Tooltip("Tanggal:N", title="Bulan"),
-                            alt.Tooltip("Realisasi:Q", title="Realisasi", format=",.0f")
+                            alt.Tooltip("Realisasi Rupiah:N", title="Realisasi")
                         ]
                     )
                     .properties(height=330, title="Tren Realisasi per Bulan")
@@ -648,13 +657,14 @@ elif menu == "Lihat Semua Data":
                     var_name="Jenis",
                     value_name="Nilai"
                 )
+                long_month["Nilai Rupiah"] = long_month["Nilai"].apply(format_rupiah)
                 grouped_bar = (
                     alt.Chart(long_month)
                     .mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5)
                     .encode(
                         x=alt.X("Tanggal:N", sort=BULAN_LIST, title=None),
                         xOffset="Jenis:N",
-                        y=alt.Y("Nilai:Q", title="Nilai Anggaran", axis=alt.Axis(format="~s")),
+                        y=alt.Y("Nilai:Q", title="Nilai Anggaran", axis=rupiah_axis("Nilai Anggaran")),
                         color=alt.Color(
                             "Jenis:N",
                             scale=alt.Scale(domain=["Pagu", "Realisasi"], range=["#4F86C6", "#E8C96A"]),
@@ -663,7 +673,7 @@ elif menu == "Lihat Semua Data":
                         tooltip=[
                             alt.Tooltip("Tanggal:N", title="Bulan"),
                             alt.Tooltip("Jenis:N", title="Kategori"),
-                            alt.Tooltip("Nilai:Q", title="Nilai", format=",.0f")
+                            alt.Tooltip("Nilai Rupiah:N", title="Nilai")
                         ]
                     )
                     .properties(height=330, title="Pagu vs Realisasi per Bulan")
@@ -717,6 +727,7 @@ elif menu == "Lihat Semua Data":
                     "Kategori": ["Realisasi", "Sisa Anggaran"],
                     "Nilai": [total_realisasi, max(total_sisa, 0)]
                 })
+                composition["Nilai Rupiah"] = composition["Nilai"].apply(format_rupiah)
                 donut = (
                     alt.Chart(composition)
                     .mark_arc(innerRadius=72, outerRadius=115, cornerRadius=8)
@@ -729,7 +740,7 @@ elif menu == "Lihat Semua Data":
                         ),
                         tooltip=[
                             alt.Tooltip("Kategori:N"),
-                            alt.Tooltip("Nilai:Q", format=",.0f")
+                            alt.Tooltip("Nilai Rupiah:N", title="Nilai")
                         ]
                     )
                     .properties(height=330, title="Komposisi Anggaran")
@@ -758,6 +769,9 @@ elif menu == "Lihat Semua Data":
                 lambda row: (row["Realisasi"] / row["Pagu"] * 100) if row["Pagu"] > 0 else 0,
                 axis=1
             )
+            unit_summary["Pagu Rupiah"] = unit_summary["Pagu"].apply(format_rupiah)
+            unit_summary["Realisasi Rupiah"] = unit_summary["Realisasi"].apply(format_rupiah)
+            unit_summary["Sisa Rupiah"] = unit_summary["Sisa Anggaran"].apply(format_rupiah)
 
             if unit_summary.empty:
                 st.info("Belum ada data unit untuk divisualisasikan")
@@ -771,7 +785,7 @@ elif menu == "Lihat Semua Data":
                         .mark_bar(cornerRadiusEnd=8)
                         .encode(
                             y=alt.Y("Unit:N", sort="-x", title=None),
-                            x=alt.X("Realisasi:Q", title="Realisasi", axis=alt.Axis(format="~s")),
+                            x=alt.X("Realisasi:Q", title="Realisasi", axis=rupiah_axis("Realisasi")),
                             color=alt.Color(
                                 "Realisasi:Q",
                                 scale=alt.Scale(range=["#315B83", "#E8C96A"]),
@@ -779,7 +793,7 @@ elif menu == "Lihat Semua Data":
                             ),
                             tooltip=[
                                 alt.Tooltip("Unit:N", title="Unit"),
-                                alt.Tooltip("Realisasi:Q", title="Realisasi", format=",.0f")
+                                alt.Tooltip("Realisasi Rupiah:N", title="Realisasi")
                             ]
                         )
                         .properties(height=340, title="Realisasi Anggaran per Unit")
@@ -800,13 +814,14 @@ elif menu == "Lihat Semua Data":
                         var_name="Jenis",
                         value_name="Nilai"
                     )
+                    unit_long["Nilai Rupiah"] = unit_long["Nilai"].apply(format_rupiah)
                     unit_compare = (
                         alt.Chart(unit_long)
                         .mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5)
                         .encode(
                             x=alt.X("Unit:N", title=None),
                             xOffset="Jenis:N",
-                            y=alt.Y("Nilai:Q", title="Nilai Anggaran", axis=alt.Axis(format="~s")),
+                            y=alt.Y("Nilai:Q", title="Nilai Anggaran", axis=rupiah_axis("Nilai Anggaran")),
                             color=alt.Color(
                                 "Jenis:N",
                                 scale=alt.Scale(domain=["Pagu", "Realisasi"], range=["#4F86C6", "#E8C96A"]),
@@ -815,7 +830,7 @@ elif menu == "Lihat Semua Data":
                             tooltip=[
                                 alt.Tooltip("Unit:N", title="Unit"),
                                 alt.Tooltip("Jenis:N", title="Kategori"),
-                                alt.Tooltip("Nilai:Q", title="Nilai", format=",.0f")
+                                alt.Tooltip("Nilai Rupiah:N", title="Nilai")
                             ]
                         )
                         .properties(height=340, title="Pagu vs Realisasi per Unit")
@@ -871,6 +886,7 @@ elif menu == "Lihat Semua Data":
                     st.markdown('<div class="chart-card">', unsafe_allow_html=True)
                     unit_share = unit_summary[["Unit", "Realisasi"]].copy()
                     unit_share = unit_share[unit_share["Realisasi"] > 0]
+                    unit_share["Realisasi Rupiah"] = unit_share["Realisasi"].apply(format_rupiah)
                     unit_donut = (
                         alt.Chart(unit_share)
                         .mark_arc(innerRadius=68, outerRadius=112, cornerRadius=7)
@@ -879,7 +895,7 @@ elif menu == "Lihat Semua Data":
                             color=alt.Color("Unit:N", legend=alt.Legend(title=None, orient="bottom")),
                             tooltip=[
                                 alt.Tooltip("Unit:N", title="Unit"),
-                                alt.Tooltip("Realisasi:Q", title="Realisasi", format=",.0f")
+                                alt.Tooltip("Realisasi Rupiah:N", title="Realisasi")
                             ]
                         )
                         .properties(height=340, title="Kontribusi Realisasi per Unit")
